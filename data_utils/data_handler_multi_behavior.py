@@ -15,8 +15,8 @@ import torch
 import torch.optim as optim
 import torch.utils.data as dataloader
 
-from data_utils.datasets_multi_behavior import CMLData, MMCLRData, KMCLRData, KGDataset, UIDataset, PairwiseTrnData, AllRankTestData, MMCLRNeighborSampler
-from models.multi_behavior.kmclr import KGModel, Contrast, BPRLoss
+from data_utils.datasets_multi_behavior import CMLData, MMCLRData, KMCLRData, KGMBRData, KGDataset, UIDataset, PairwiseTrnData, AllRankTestData, MMCLRNeighborSampler
+from models.multi_behavior.kgmbr import KGModel, Contrast, BPRLoss
 from config.configurator import configs
 
 
@@ -50,7 +50,7 @@ class DataHandlerMultiBehavior():
 
     def _load_data(self):
         self.t_max = -1 
-        self.t_min = 0x7FFFFFFF
+        self.t_min = 0x7FFFFFFF # 给一个很大的初始值
         self.time_number = -1
  
         self.user_num = -1
@@ -60,7 +60,7 @@ class DataHandlerMultiBehavior():
         for i in range(0, len(self.behaviors)):
             with open(self.train_file + self.behaviors[i] + '.pkl', 'rb') as fs:  
                 data = pickle.load(fs)
-                self.behaviors_data[i] = 1*(data!=0) 
+                self.behaviors_data[i] = 1*(data!=0) # 三种behavior下对应的data
                 if data.get_shape()[0] > self.user_num:  
                     self.user_num = data.get_shape()[0]  
                 if data.get_shape()[1] > self.item_num:  
@@ -69,10 +69,10 @@ class DataHandlerMultiBehavior():
                     self.t_max = data.data.max()
                 if data.data.min() < self.t_min:
                     self.t_min = data.data.min()
-                if self.behaviors[i] == configs['model']['target']:
+                if self.behaviors[i] == configs['model']['target']: #buy
                     self.train_mat = data  
                     self.trainLabel = 1*(self.train_mat != 0)  
-                    self.labelP = np.squeeze(np.array(np.sum(self.trainLabel, axis=0)))  
+                    self.labelP = np.squeeze(np.array(np.sum(self.trainLabel, axis=0)))  # 对每一个item求和，得到每个类别的样本数量(每一个item被购买的数量)
         self.test_mat = pickle.load(open(self.test_file, 'rb'))
         self.userNum = self.behaviors_data[0].shape[0]
         self.itemNum = self.behaviors_data[0].shape[1]
@@ -136,7 +136,7 @@ class DataHandlerMultiBehavior():
 
     def load_data(self):
         self._load_data()
-        configs['data']['user_num'], configs['data']['item_num'] = self.train_mat.shape
+        configs['data']['user_num'], configs['data']['item_num'] = self.train_mat.shape # shape 的行和列分别对应于 user和item 的数量
         test_data = AllRankTestData(self.test_mat, self.train_mat)
         self.test_dataloader = dataloader.DataLoader(test_data, batch_size=configs['test']['batch_size'], shuffle=False, num_workers=0)
 
@@ -153,15 +153,29 @@ class DataHandlerMultiBehavior():
             self.train_dataloader = dataloader.DataLoader(train_dataset, batch_size=configs['train']['batch_size'], shuffle=True, num_workers=4, pin_memory=True)
             return
         elif configs['model']['name']=='kmclr':   
-            train_u, train_v = self.train_mat.nonzero()
-            train_data = np.hstack((train_u.reshape(-1, 1), train_v.reshape(-1, 1))).tolist()
+            train_u, train_v = self.train_mat.nonzero()# 获取所有非零元素的行索引以及列索引
+            train_data = np.hstack((train_u.reshape(-1, 1), train_v.reshape(-1, 1))).tolist() # 包含了非零元素的行和列索引的二元组
             train_dataset = KMCLRData(self.behaviors, train_data, self.item_num, self.behaviors_data, True)  #TODO
             self.train_loader = dataloader.DataLoader(train_dataset, batch_size=configs['train']['batch_size'], shuffle=True, num_workers=0, pin_memory=True)
             self.test_dataloader = dataloader.DataLoader(test_data, batch_size=configs['test']['batch_size'], shuffle=False, num_workers=0)
-            #kg habdler
+            #kg handler
             self.raw_kg_dataset = UIDataset(path=self.predir)
-            self.kg_dataset = KGDataset(self.raw_kg_dataset.m_item)
-            self.Kg_model = KGModel(self.raw_kg_dataset, self.kg_dataset).to( configs['device'] ).to(configs['device'])
+            self.kg_dataset = KGDataset(self.raw_kg_dataset.m_item) # max_item
+            self.Kg_model = KGModel(self.raw_kg_dataset, self.kg_dataset).to( configs['device'] ).to(configs['device']) #GAT
+            self.contrast_model = Contrast(self.Kg_model, configs['model']['kgc_temp'])
+            self.kg_optimizer = optim.Adam(self.Kg_model.parameters(), lr= configs['model']['kg_lr'])
+            self.bpr = BPRLoss(self.Kg_model, self.kg_optimizer)
+            return
+        elif configs['model']['name']=='kgmbr':   
+            train_u, train_v = self.train_mat.nonzero()
+            train_data = np.hstack((train_u.reshape(-1, 1), train_v.reshape(-1, 1))).tolist() 
+            train_dataset = KGMBRData(self.behaviors, train_data, self.item_num, self.behaviors_data, True)  #TODO
+            self.train_loader = dataloader.DataLoader(train_dataset, batch_size=configs['train']['batch_size'], shuffle=True, num_workers=0, pin_memory=True)
+            self.test_dataloader = dataloader.DataLoader(test_data, batch_size=configs['test']['batch_size'], shuffle=False, num_workers=0)
+            #kg handler
+            self.raw_kg_dataset = UIDataset(path=self.predir)
+            self.kg_dataset = KGDataset(self.raw_kg_dataset.m_item) # max_item
+            self.Kg_model = KGModel(self.raw_kg_dataset, self.kg_dataset).to( configs['device'] ).to(configs['device']) #GAT
             self.contrast_model = Contrast(self.Kg_model, configs['model']['kgc_temp'])
             self.kg_optimizer = optim.Adam(self.Kg_model.parameters(), lr= configs['model']['kg_lr'])
             self.bpr = BPRLoss(self.Kg_model, self.kg_optimizer)

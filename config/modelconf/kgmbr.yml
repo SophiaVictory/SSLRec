@@ -17,7 +17,7 @@ train:
   reproducible: true
   seed: 2023
   SSL_batch: 18
-  trainer: kmclr_trainer
+  trainer: kgmbr_trainer
 
 test:
   metrics: [recall, ndcg] # choose in {ndcg, recall, precision, mrr}
@@ -30,7 +30,7 @@ data:
 
 
 model:
-  name: kmclr # case-insensitive
+  name: kgmbr # case-insensitive
   keep_rate: 0.5
   layer_num: 3
   reg_weight: 1.0e-2
@@ -69,7 +69,7 @@ model:
   entity_num_per_item: 10
   kgc_temp: 0.2
   kg_p_drop: 0.5
-  path: /home/weiw/Code/KMCLR/KMCLR/KMCLR/datasets/
+  path: /home/zihanyu/hanyu/Project_han/SSLRec/datasets/
   isJustTest: False
   device: cuda:0
 

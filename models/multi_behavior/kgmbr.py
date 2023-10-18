@@ -32,9 +32,9 @@ def to_var(x, requires_grad=True):
 
 
 
-class KMCLR(BaseModel):
+class KGMBR(BaseModel):
     def __init__(self, data_handler):
-        super(KMCLR, self).__init__(data_handler)
+        super(KGMBR, self).__init__(data_handler)
 
     # def __init__(self, userNum, itemNum, behavior, behavior_mats):  
         self.data_handler = data_handler       
@@ -281,7 +281,7 @@ def drop_edge_random(item2entities, p_drop, padding):
     return res
 
 
-class Contrast(nn.Module):
+class Contrast(nn.Module): # KG-contrast
     def __init__(self, gcn_model, tau):
         super(Contrast, self).__init__()
         self.gcn_model: Model = gcn_model
@@ -455,7 +455,7 @@ class KGModel(nn.Module):
         self.keep_prob = configs['model']['keep_prob']
         self.A_split = configs['model']['A_split']
 
-        self.embedding_user = torch.nn.Embedding(self.num_users, self.latent_dim)
+        self.embedding_user = torch.nn.Embedding(self.num_users, self.latent_dim) # get embedding
         self.emb_item_list = nn.ModuleList([
             torch.nn.Embedding(self.num_items, self.latent_dim),
             torch.nn.Embedding(self.num_items, self.latent_dim)

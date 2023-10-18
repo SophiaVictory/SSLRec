@@ -24,15 +24,15 @@ from models.multi_behavior.utils import tools
 
 class AllRankTestData(data.Dataset):
     def __init__(self, coomat, trn_mat):
-        self.csrmat = (trn_mat.tocsr() != 0) * 1.0
+        self.csrmat = (trn_mat.tocsr() != 0) * 1.0 # 不为0的设置成1
 
         user_pos_lists = [list() for i in range(coomat.shape[0])]
         # user_pos_lists = set()
         test_users = set()
-        for i in range(len(coomat.data)):
+        for i in range(len(coomat.data)): # coo_matrix 中有 row（行index），col（列index），data
             row = coomat.row[i]
             col = coomat.col[i]
-            user_pos_lists[row].append(col)
+            user_pos_lists[row].append(col) # 元素位置的index
             test_users.add(row)
         self.test_users = np.array(list(test_users))
         self.user_pos_lists = user_pos_lists
@@ -590,16 +590,16 @@ class KMCLRData(data.Dataset):
         self.data = np.array(data)
         self.num_item = num_item
         self.is_training = is_training
-        self.beh = beh
+        self.beh = beh # ['view','cart', 'buy']
         self.behaviors_data = behaviors_data
 
-        self.length = self.data.shape[0] 
+        self.length = self.data.shape[0] # data 的长度，也是item的总数量（target buy）
         self.neg_data = [None]*self.length  
         self.pos_data = [None]*self.length  
 
-    def ng_sample(self):
+    def ng_sample(self): # pos-neg pairs
         for i in range(self.length):
-            self.neg_data[i] = [None]*len(self.beh)
+            self.neg_data[i] = [None]*len(self.beh) # 为每一个data建立四种行为下的list
             self.pos_data[i] = [None]*len(self.beh)
 
         for index in range(len(self.beh)):
@@ -647,6 +647,70 @@ class KMCLRData(data.Dataset):
         else:  
             return user, item_i
 
+
+class KGMBRData(data.Dataset):
+    def __init__(self, beh, data, num_item, behaviors_data=None, num_ng=1, is_training=True):  
+        super(KGMBRData, self).__init__()
+
+        self.data = np.array(data)
+        self.num_item = num_item
+        self.is_training = is_training
+        self.beh = beh 
+        self.behaviors_data = behaviors_data
+
+        self.length = self.data.shape[0] 
+        self.neg_data = [None]*self.length  
+        self.pos_data = [None]*self.length  
+
+    def ng_sample(self): # pos-neg pairs
+        for i in range(self.length):
+            self.neg_data[i] = [None]*len(self.beh) 
+            self.pos_data[i] = [None]*len(self.beh)
+
+        for index in range(len(self.beh)):
+            train_u, train_v = self.behaviors_data[index].nonzero()
+            beh_dok = self.behaviors_data[index].todok()
+
+            set_pos = np.array(list(set(train_v)))
+
+            self.pos_data_index = np.random.choice(set_pos, size=self.length, replace=True, p=None)
+            self.neg_data_index = np.random.randint(low=0, high=self.num_item, size=self.length)
+
+            for i in range(self.length):
+
+                uid = self.data[i][0]
+                iid_neg = self.neg_data[i][index] = self.neg_data_index[i]
+                iid_pos = self.pos_data[i][index] = self.pos_data_index[i]
+
+                if (uid, iid_neg) in beh_dok:
+                    while (uid, iid_neg) in beh_dok:
+                        iid_neg = np.random.randint(low=0, high=self.num_item)
+                        self.neg_data[i][index] = iid_neg
+                    self.neg_data[i][index] = iid_neg
+
+                if index == (len(self.beh)-1):
+                    self.pos_data[i][index] = train_v[i]
+                elif (uid, iid_pos) not in beh_dok:
+                    if len(self.behaviors_data[index].tocsr()[uid].data)==0:
+                        self.pos_data[i][index] = -1
+                    else:
+                        t_array = self.behaviors_data[index].tocsr()[uid].toarray()
+                        pos_index = np.where(t_array!=0)[1]
+                        iid_pos = np.random.choice(pos_index, size = 1, replace=True, p=None)[0]   
+                        self.pos_data[i][index] = iid_pos
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        user = self.data[idx][0]
+        item_i = self.pos_data[idx]
+
+        if self.is_training:  
+            item_j = self.neg_data[idx]
+            return user, item_i, item_j
+        else:  
+            return user, item_i
 
 
 class KGDataset(Dataset):
@@ -894,7 +958,7 @@ class UIDataset(BasicDataset):
                 self.Graph = self.Graph.coalesce().to(configs['model']['device'])
         return self.Graph
 
-    def __build_test(self):
+    def __build_test(self): # 构建test
         test_data = {}
         for i, item in enumerate(self.testItem):
             user = self.testUser[i]
